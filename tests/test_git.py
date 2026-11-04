@@ -68,3 +68,14 @@ def test_worktree_add_path(tmp_path: Path) -> None:
     path = Git(REMOTE).worktree_add(repo, root, "feature/x")
     assert path == root / "feature/x"
     assert ("git", "-C", str(repo), "worktree", "add", str(path), "-b", "feature/x") in commands()
+
+
+def test_worktree_add_is_idempotent_when_exists(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    root = tmp_path / "worktrees"
+    branch = "feature/x"
+    path = root / branch
+    path.mkdir(parents=True)
+    result = Git(REMOTE).worktree_add(repo, root, branch)
+    assert result == path
+    assert commands() == []
