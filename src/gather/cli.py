@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from gather.discover import discover, parse_scope
-from gather.errors import GatherError
+from gather.errors import ForbiddenError, GatherError, NoRemoteError
 from gather.git import current_branch, sync_existing
 from gather.layout import Layout
 from gather.manager import Manager, sync_wikis
@@ -31,15 +31,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--url",
         metavar="REPOSITORY_URL",
         help=(
-            "full git url (for --setup) or a path prefix under the projects "
-            "root: <host>, <host>/<owner>, or <host>/<owner>/<repo>"
+            "full git url or a <host>/<owner>/<repo> path; --list/--sync also "
+            "accept a scope prefix: <host> or <host>/<owner>"
         ),
     )
     parser.add_argument(
         "-s",
         "--setup",
         action="store_true",
-        help="clone the reference repository",
+        help="clone or update the reference repository (a bare path clones via https)",
     )
     parser.add_argument(
         "-w",
@@ -86,20 +86,23 @@ def _scope(url: str | None) -> tuple[str, ...]:
     return parse_scope(url)
 
 
-def resolve_remote(root: Path, url: str) -> Remote:
+def resolve_remote(root: Path, url: str, *, allow_missing: bool = False) -> Remote:
     """Resolve a full url to a :class:`Remote`, or a ``host/owner/repo`` path to
-    the remote of an already-setup checkout."""
+    the remote of an already-setup checkout.
+
+    With ``allow_missing``, a path with no local checkout resolves to an https
+    remote so ``--setup`` can clone it."""
     if _is_url(url):
         return Remote.parse(url)
     parts = parse_scope(url)
     if len(parts) != 3:
         raise GatherError(f"expected <host>/<owner>/<repo>, got {url!r}")
     path = root.joinpath(*parts)
-    if not (path / ".git").exists():
-        raise GatherError(
-            f"repository {path} does not exist; run --setup with a full url first"
-        )
-    return Remote.from_path(path)
+    if (path / ".git").exists():
+        return Remote.from_path(path)
+    if allow_missing:
+        return Remote.parse(url)
+    raise GatherError(f"repository {path} does not exist; run --setup first")
 
 
 def _cmd_list(layout: Layout, url: str | None) -> None:
@@ -112,7 +115,10 @@ def _cmd_list(layout: Layout, url: str | None) -> None:
 def _cmd_sync(layout: Layout, url: str | None) -> None:
     for path in discover(layout, _scope(url)):
         print(f"syncing {path.relative_to(layout.root)}")
-        sync_existing(path)
+        try:
+            sync_existing(path)
+        except (NoRemoteError, ForbiddenError):
+            print("no remote or forbidden")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -133,9 +139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error("--url is required (or use --list / --sync)")
 
         if args.setup:
-            if not _is_url(args.url):
-                parser.error(f"--setup requires a full url, got {args.url!r}")
-            remote = Remote.parse(args.url)
+            remote = resolve_remote(root, args.url, allow_missing=True)
             print(f"reference repository is at {Manager(layout, remote).setup()}")
             return 0
 

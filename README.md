@@ -49,9 +49,10 @@ lives at `gitea.x.home.arpa/python/gather`.
 
 ## Commands
 
-- `-u, --url <url>` — a full git url (for `--setup`) or the `host/owner/repo`
-  path of an already-setup repository.
-- `-s, --setup` — clone the reference repository.
+- `-u, --url <url>` — a full git url or a `host/owner/repo` path. `--setup`
+  accepts either: an existing checkout is updated, a missing one is cloned via
+  https.
+- `-s, --setup` — clone or update the reference repository.
 - `-w, --wiki [extra-url ...]` — sync the project wiki (plus any extra wikis,
   e.g. the instance wiki) and merge every page into one `ALL.md` for
   drift-finding. Each page is prefixed with `----` and a `source:` line.

@@ -45,7 +45,16 @@ class Remote:
             return cls._parse_ssh(url)
         if url.startswith(("https://", "http://")):
             return cls._parse_https(url)
-        raise GatherError(f"invalid git remote url: {url!r}")
+        return cls._parse_path(url)
+
+    @staticmethod
+    def _parse_path(value: str) -> Remote:
+        """Parse a bare ``host/owner/repo`` path, defaulting to https."""
+        parts = [part for part in value.strip("/").split("/") if part]
+        if len(parts) != 3 or not all(parts):
+            raise GatherError(f"expected <host>/<owner>/<repo>, got {value!r}")
+        host, owner, repo = parts
+        return Remote(host, owner, repo.removesuffix(".git"), "https")
 
     @classmethod
     def from_path(cls, path: Path) -> Remote:
