@@ -26,10 +26,10 @@
     ty = {
       enable = true;
       name = "ty";
-      entry = "${lib.getExe pkgs.ty} check";
+      entry = "${lib.getExe pkgs.ty} check src";
       files = "\\.py$";
       language = "system";
-      pass_filenames = true;
+      pass_filenames = false;
     };
   };
 }
