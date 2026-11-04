@@ -1,0 +1,17 @@
+[project]
+name = "gather"
+version = "0.1.0"
+description = "CLI tool for bootstrapping git managed projects, their wiki and worktrees in a single opinionated way."
+readme = "README.md"
+authors = [
+    { name = "risus", email = "rtfsc@pm.me" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+gather = "gather:main"
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"
