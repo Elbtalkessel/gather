@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from gather.discover import discover, parse_scope
-from gather.errors import GatherError
+from gather.errors import ForbiddenError, GatherError, NoRemoteError
 from gather.git import current_branch, sync_existing
 from gather.layout import Layout
 from gather.manager import Manager, sync_wikis
@@ -112,7 +112,10 @@ def _cmd_list(layout: Layout, url: str | None) -> None:
 def _cmd_sync(layout: Layout, url: str | None) -> None:
     for path in discover(layout, _scope(url)):
         print(f"syncing {path.relative_to(layout.root)}")
-        sync_existing(path)
+        try:
+            sync_existing(path)
+        except (NoRemoteError, ForbiddenError):
+            print("no remote or forbidden")
 
 
 def main(argv: Sequence[str] | None = None) -> int:

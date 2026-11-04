@@ -4,8 +4,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from gather.process import Process
+from gather.errors import ForbiddenError, NoRemoteError
+from gather.process import Process, ProcessError
 from gather.remote import Remote
+
+_FORBIDDEN_MARKERS = (
+    "permission denied",
+    "authentication failed",
+    "could not read from remote repository",
+    "access rights",
+    "could not read username",
+)
+
+
+def has_origin(path: Path) -> bool:
+    """Return whether the checkout declares an ``origin`` remote."""
+    return Process("git", "-C", str(path), "remote", "get-url", "origin").run().ok
+
+
+def _is_forbidden(stderr: str) -> bool:
+    lowered = stderr.lower()
+    return any(marker in lowered for marker in _FORBIDDEN_MARKERS)
 
 
 def sync_existing(path: Path) -> None:
@@ -16,8 +35,17 @@ def sync_existing(path: Path) -> None:
     concurrently. ``fetch`` + ``merge --ff-only`` is safe under concurrency and
     never rewrites local history — if the local branch has diverged it errors
     instead of silently rebasing.
+
+    A checkout with no ``origin`` remote, or whose remote rejects access, is not
+    syncable and raises a dedicated error so callers can skip it.
     """
-    Process("git", "-C", str(path), "fetch", "origin").checked()
+    if not has_origin(path):
+        raise NoRemoteError(f"{path} has no 'origin' remote")
+    fetch = Process("git", "-C", str(path), "fetch", "origin").run()
+    if not fetch.ok:
+        if _is_forbidden(fetch.err):
+            raise ForbiddenError(f"{path} remote rejected access")
+        raise ProcessError(fetch)
     branch = Process(
         "git", "-C", str(path), "rev-parse", "--abbrev-ref", "HEAD"
     ).checked().out
