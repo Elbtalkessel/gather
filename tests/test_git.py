@@ -8,7 +8,7 @@ from typing import ClassVar
 import pytest
 
 from gather import git as git_module
-from gather.git import Git
+from gather.git import Git, current_branch, sync_existing
 from gather.process import Result
 from gather.remote import Remote
 
@@ -60,6 +60,19 @@ def test_sync_does_not_use_pull(tmp_path: Path) -> None:
     (repo / ".git").mkdir(parents=True)
     Git(REMOTE).sync(repo)
     assert not any("pull" in args for args in commands())
+
+
+def test_sync_existing_fetches_and_fast_forwards(tmp_path: Path) -> None:
+    repo = tmp_path / "gather"
+    sync_existing(repo)
+    assert ("git", "-C", str(repo), "fetch", "origin") in commands()
+    assert ("git", "-C", str(repo), "merge", "--ff-only", "origin/main") in commands()
+
+
+def test_current_branch(tmp_path: Path) -> None:
+    repo = tmp_path / "gather"
+    assert current_branch(repo) == "main"
+    assert commands()[-1][:4] == ("git", "-C", str(repo), "rev-parse")
 
 
 def test_worktree_add_path(tmp_path: Path) -> None:
