@@ -26,6 +26,25 @@ def test_parse_https() -> None:
     assert remote.proto == "https"
 
 
+def test_parse_bare_path_defaults_to_https() -> None:
+    remote = Remote.parse("gitea.x.home.arpa/python/gather")
+    assert remote.host == "gitea.x.home.arpa"
+    assert remote.owner == "python"
+    assert remote.repo == "gather"
+    assert remote.proto == "https"
+    assert remote.origin == "https://gitea.x.home.arpa/python/gather.git"
+
+
+def test_parse_bare_path_with_dot_git() -> None:
+    remote = Remote.parse("gitea.x.home.arpa/python/gather.git")
+    assert remote.repo == "gather"
+
+
+def test_parse_bare_path_rejects_wrong_arity() -> None:
+    with pytest.raises(GatherError):
+        Remote.parse("gitea.x.home.arpa/python")
+
+
 def test_parse_without_dot_git() -> None:
     remote = Remote.parse("git@gitea.x.home.arpa:python/gather")
     assert remote.repo == "gather"

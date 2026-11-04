@@ -23,6 +23,16 @@ def test_resolve_remote_rejects_missing_repo(tmp_path: Path) -> None:
         resolve_remote(tmp_path, "gitea.x.home.arpa/python/gather")
 
 
+def test_resolve_remote_allow_missing_defaults_to_https(tmp_path: Path) -> None:
+    remote = resolve_remote(
+        tmp_path, "gitea.x.home.arpa/python/gather", allow_missing=True
+    )
+    assert remote.host == "gitea.x.home.arpa"
+    assert remote.owner == "python"
+    assert remote.repo == "gather"
+    assert remote.proto == "https"
+
+
 def _repo(root: Path, name: str = "repo") -> Path:
     path = root / "gitea.x.home.arpa" / "python" / name
     (path / ".git").mkdir(parents=True)
