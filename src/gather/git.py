@@ -38,6 +38,11 @@ def sync_existing(path: Path) -> None:
 
     A checkout with no ``origin`` remote, or whose remote rejects access, is not
     syncable and raises a dedicated error so callers can skip it.
+
+    An empty clone (a wiki with no pages yet, for example) has an unborn branch:
+    ``HEAD`` names a branch that has no commits, so ``rev-parse`` cannot resolve
+    it. It is fast-forwarded by adopting the remote tracking branch once that
+    exists, and skipped entirely while both sides are still empty.
     """
     if not has_origin(path):
         raise NoRemoteError(f"{path} has no 'origin' remote")
@@ -47,9 +52,23 @@ def sync_existing(path: Path) -> None:
             raise ForbiddenError(f"{path} remote rejected access")
         raise ProcessError(fetch)
     branch = Process(
-        "git", "-C", str(path), "rev-parse", "--abbrev-ref", "HEAD"
-    ).checked().out
-    Process("git", "-C", str(path), "merge", "--ff-only", f"origin/{branch}").checked()
+        "git", "-C", str(path), "symbolic-ref", "--quiet", "--short", "HEAD"
+    ).run().out
+    if not branch:
+        return  # detached HEAD: nothing to fast-forward
+    remote_ref = f"origin/{branch}"
+    if not Process(
+        "git", "-C", str(path), "rev-parse", "--verify", "HEAD"
+    ).run().ok:
+        # Unborn branch (empty clone): adopt the remote branch if it now exists.
+        if Process(
+            "git", "-C", str(path), "rev-parse", "--verify", remote_ref
+        ).run().ok:
+            Process(
+                "git", "-C", str(path), "checkout", "-B", branch, remote_ref
+            ).checked()
+        return
+    Process("git", "-C", str(path), "merge", "--ff-only", remote_ref).checked()
 
 
 def current_branch(path: Path) -> str:

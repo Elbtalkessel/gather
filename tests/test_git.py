@@ -96,12 +96,14 @@ def test_worktree_add_is_idempotent_when_exists(tmp_path: Path) -> None:
 
 
 class ScriptedProcess:
-    """A Process stand-in whose responses are queued by the test."""
+    """A ``Process`` stand-in whose responses are queued by the test."""
 
+    calls: ClassVar[list[ScriptedProcess]] = []
     script: ClassVar[list[tuple[int, str, str]]] = []
 
     def __init__(self, *args: str, **kwargs: object) -> None:
         self.args = args
+        ScriptedProcess.calls.append(self)
 
     def run(self) -> Result:
         code, out, err = ScriptedProcess.script.pop(0)
@@ -117,6 +119,7 @@ class ScriptedProcess:
 @pytest.fixture
 def stub_scripted(monkeypatch: pytest.MonkeyPatch) -> None:
     ScriptedProcess.script = []
+    ScriptedProcess.calls = []
     monkeypatch.setattr(git_module, "Process", ScriptedProcess)
 
 
@@ -151,3 +154,46 @@ def test_sync_existing_propagates_other_fetch_failures(
     ]
     with pytest.raises(ProcessError):
         sync_existing(repo)
+
+
+def test_sync_existing_skips_empty_checkout(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "gather"
+    ScriptedProcess.script = [
+        (0, "git@gitea.x.home.arpa:owner/repo.git", ""),  # remote get-url origin
+        (0, "", ""),  # fetch
+        (0, "master", ""),  # symbolic-ref --short HEAD
+        (128, "", "fatal: Needed a single revision"),  # rev-parse --verify HEAD
+        (128, "", "fatal: Needed a single revision"),  # rev-parse --verify origin/master
+    ]
+    sync_existing(repo)
+    called = [call.args for call in ScriptedProcess.calls]
+    assert not any("merge" in args for args in called)
+    assert not any("checkout" in args for args in called)
+
+
+def test_sync_existing_adopts_remote_branch_for_empty_checkout(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "gather"
+    ScriptedProcess.script = [
+        (0, "git@gitea.x.home.arpa:owner/repo.git", ""),  # remote get-url origin
+        (0, "", ""),  # fetch
+        (0, "master", ""),  # symbolic-ref --short HEAD
+        (128, "", "fatal: Needed a single revision"),  # rev-parse --verify HEAD
+        (0, "abc123", ""),  # rev-parse --verify origin/master
+        (0, "", ""),  # checkout -B master origin/master
+    ]
+    sync_existing(repo)
+    called = [call.args for call in ScriptedProcess.calls]
+    assert (
+        "git",
+        "-C",
+        str(repo),
+        "checkout",
+        "-B",
+        "master",
+        "origin/master",
+    ) in called
+    assert not any("merge" in args for args in called)
