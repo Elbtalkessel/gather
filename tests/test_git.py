@@ -8,8 +8,9 @@ from typing import ClassVar
 import pytest
 
 from gather import git as git_module
+from gather.errors import ForbiddenError, NoRemoteError
 from gather.git import Git, current_branch, sync_existing
-from gather.process import Result
+from gather.process import ProcessError, Result
 from gather.remote import Remote
 
 REMOTE = Remote.parse("git@gitea.x.home.arpa:python/gather.git")
@@ -92,3 +93,61 @@ def test_worktree_add_is_idempotent_when_exists(tmp_path: Path) -> None:
     result = Git(REMOTE).worktree_add(repo, root, branch)
     assert result == path
     assert commands() == []
+
+
+class ScriptedProcess:
+    """A Process stand-in whose responses are queued by the test."""
+
+    script: ClassVar[list[tuple[int, str, str]]] = []
+
+    def __init__(self, *args: str, **kwargs: object) -> None:
+        self.args = args
+
+    def run(self) -> Result:
+        code, out, err = ScriptedProcess.script.pop(0)
+        return Result(self.args, code, out, err)
+
+    def checked(self) -> Result:
+        result = self.run()
+        if not result.ok:
+            raise ProcessError(result)
+        return result
+
+
+@pytest.fixture
+def stub_scripted(monkeypatch: pytest.MonkeyPatch) -> None:
+    ScriptedProcess.script = []
+    monkeypatch.setattr(git_module, "Process", ScriptedProcess)
+
+
+def test_sync_existing_raises_no_remote_when_origin_missing(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "gather"
+    ScriptedProcess.script = [(128, "", "fatal: 'origin' does not appear to be a git repository")]
+    with pytest.raises(NoRemoteError):
+        sync_existing(repo)
+
+
+def test_sync_existing_raises_forbidden_on_access_denied(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "gather"
+    ScriptedProcess.script = [
+        (0, "git@gitea.x.home.arpa:owner/repo.git", ""),  # remote get-url origin
+        (128, "", "Permission denied (publickey).\nfatal: Could not read from remote repository."),  # fetch
+    ]
+    with pytest.raises(ForbiddenError):
+        sync_existing(repo)
+
+
+def test_sync_existing_propagates_other_fetch_failures(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "gather"
+    ScriptedProcess.script = [
+        (0, "git@gitea.x.home.arpa:owner/repo.git", ""),  # remote get-url origin
+        (1, "", "some unrelated git error"),  # fetch
+    ]
+    with pytest.raises(ProcessError):
+        sync_existing(repo)
