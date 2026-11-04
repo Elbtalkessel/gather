@@ -1,95 +1,91 @@
+"""High-level orchestration: setup, wiki sync, worktrees, info."""
+
+from __future__ import annotations
+
 import socket
+from collections.abc import Sequence
 from pathlib import Path
 
-from gather.integration import Devenv, Git
-from gather.processes import Process
+from gather.devenv import Devenv
+from gather.git import Git
+from gather.layout import Layout
+from gather.process import Process
+from gather.remote import Remote
+from gather.wiki import merge_wikis
 
 
 class Manager:
-    root: Path
-    _worktrees: Path
-    _wikis: Path
-    git: Git
+    """Orchestrates one remote's repo, wiki, and worktrees under a :class:`Layout`."""
 
-    def __init__(self, root: Path, url: str):
-        self.root = root
-        self._worktrees = self.root / "worktrees"
-        self._wikis = self.root / "wikis"
-        self.git = (
-            Git(url) if url.startswith(("git", "http")) else Git.from_path(root / url)
-        )
-
-        self.root.mkdir(exist_ok=True)
-        self._worktrees.mkdir(exist_ok=True)
-        self._wikis.mkdir(exist_ok=True)
+    def __init__(self, layout: Layout, remote: Remote) -> None:
+        self.layout = layout
+        self.remote = remote
+        self.git = Git(remote)
 
     @property
-    def project(self) -> Path:
-        return self.root / self.git.owner / self.git.repo
+    def repo_path(self) -> Path:
+        return self.layout.repo(self.remote)
 
     @property
-    def wiki(self) -> Path:
-        return self._wikis / self.git.owner / self.git.repo
+    def wiki_path(self) -> Path:
+        return self.layout.repo(self.remote.wiki)
 
     @property
-    def wiki_all(self) -> Path:
-        return self.wiki / "ALL.md"
-
-    @property
-    def wiki_source(self) -> Path:
-        return self.wiki / "source"
-
-    @property
-    def worktrees(self) -> Path:
-        return self._worktrees / self.git.owner / self.git.repo
+    def worktree_root(self) -> Path:
+        return self.layout.worktrees(self.remote)
 
     def setup(self) -> Path:
-        self.project.mkdir(parents=True, exist_ok=True)
-        if not (self.project / ".git").exists():
-            self.git.clone(self.project)
-        else:
-            self.git.pull(self.project)
-        return self.project
+        self.git.sync(self.repo_path)
+        return self.repo_path
 
     def wiki_sync(self) -> Path:
-        self.wiki_source.mkdir(parents=True, exist_ok=True)
-        self.git.wiki.ensure(self.wiki_source)
-        return self.wiki_source
-
-    def info(self):
-        items = (
-            ("Username", Process("git config --get user.name").try_run()),
-            ("Email", Process("git config --get user.email").try_run()),
-            ("Hostname", socket.gethostname()),
-            ("Wiki", str(self.wiki_all)),
-            ("Project", str(self.project)),
-            ("Worktrees", str(self.worktrees)),
-            ("Wiki Git", self.git.wiki.origin),
-            ("Project Git", self.git.origin),
-        )
-        for name, value in items:
-            print(f"{name}: {value}")
+        Git(self.remote.wiki).sync(self.wiki_path)
+        return self.wiki_path
 
     def worktree_add(self, branch: str) -> Path:
-        wt = self.git.worktree_add(self.project, self.worktrees, branch)
-        devenv = Devenv(wt)
-        if devenv.is_available():
-            Devenv(wt).setup()
-        return wt
+        path = self.git.worktree_add(self.repo_path, self.worktree_root, branch)
+        Devenv(path).setup()
+        return path
 
     def worktree_remove(self, branch: str) -> None:
-        self.git.worktree_remove(self.project, self.worktrees, branch)
+        self.git.worktree_remove(self.repo_path, self.worktree_root, branch)
+
+    def info(self) -> None:
+        fields = (
+            ("username", Process("git", "config", "--get", "user.name").run().out),
+            ("email", Process("git", "config", "--get", "user.email").run().out),
+            ("hostname", socket.gethostname()),
+            ("repo", str(self.repo_path)),
+            ("wiki", str(self.wiki_path)),
+            ("worktrees", str(self.worktree_root)),
+            ("repo remote", self.remote.origin),
+            ("wiki remote", self.remote.wiki.origin),
+        )
+        for name, value in fields:
+            print(f"{name}: {value}")
 
 
-def combine_wiki(managers: list[Manager], output: Path):
-    if output.exists():
-        output.unlink()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.touch()
-    with open(output, "at") as f:
-        for manager in managers:
-            result = manager.wiki_sync()
-            for page in result.glob("*.md"):
-                f.write("----\n")
-                f.write(f"source: {page.name} from {manager.git.wiki.origin}\n")
-                f.write(page.read_text())
+def sync_wikis(layout: Layout, main: Remote, extras: Sequence[str]) -> Path:
+    """Sync the project wiki and every extra wiki, then merge them into ALL.md.
+
+    ``extras`` holds additional repo URLs whose *wikis* should be merged (e.g.
+    the instance wiki ``kb/gitea``). The merged view is written to a derived
+    cache location, never inside a wiki repo.
+    """
+    remotes: list[Remote] = []
+    seen: set[str] = set()
+    for remote in [main, *(Remote.parse(url) for url in extras)]:
+        if remote.origin not in seen:
+            seen.add(remote.origin)
+            remotes.append(remote)
+
+    wikis: list[tuple[Remote, Path]] = []
+    for remote in remotes:
+        wiki_remote = remote.wiki
+        wiki_path = layout.repo(wiki_remote)
+        Git(wiki_remote).sync(wiki_path)
+        wikis.append((wiki_remote, wiki_path))
+
+    output = layout.cache(main) / "ALL.md"
+    merge_wikis(wikis, output)
+    return output

@@ -1,6 +1,6 @@
 { pkgs, lib, ... }:
 {
-  name = "pyshb";
+  name = "gather";
   languages = {
     python = {
       enable = true;
