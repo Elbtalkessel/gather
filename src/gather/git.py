@@ -44,6 +44,8 @@ class Git:
 
     def worktree_add(self, repo: Path, root: Path, branch: str) -> Path:
         path = root / branch
+        if path.exists():
+            return path
         Process(
             "git", "-C", str(repo), "worktree", "add", str(path), "-b", branch
         ).checked()
