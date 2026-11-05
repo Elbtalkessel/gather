@@ -50,18 +50,21 @@ class Manager:
     def worktree_remove(self, branch: str) -> None:
         self.git.worktree_remove(self.repo_path, self.worktree_root, branch)
 
+    def info_fields(self) -> dict[str, str]:
+        """Return the resolved paths and remotes as a dict."""
+        return {
+            "username": Process("git", "config", "--get", "user.name").run().out,
+            "email": Process("git", "config", "--get", "user.email").run().out,
+            "hostname": socket.gethostname(),
+            "repo": str(self.repo_path),
+            "wiki": str(self.wiki_path),
+            "worktrees": str(self.worktree_root),
+            "repo remote": self.remote.origin,
+            "wiki remote": self.remote.wiki.origin,
+        }
+
     def info(self) -> None:
-        fields = (
-            ("username", Process("git", "config", "--get", "user.name").run().out),
-            ("email", Process("git", "config", "--get", "user.email").run().out),
-            ("hostname", socket.gethostname()),
-            ("repo", str(self.repo_path)),
-            ("wiki", str(self.wiki_path)),
-            ("worktrees", str(self.worktree_root)),
-            ("repo remote", self.remote.origin),
-            ("wiki remote", self.remote.wiki.origin),
-        )
-        for name, value in fields:
+        for name, value in self.info_fields().items():
             print(f"{name}: {value}")
 
 
