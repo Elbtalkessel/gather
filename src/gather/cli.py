@@ -8,12 +8,10 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from gather.discover import discover, parse_scope
-from gather.errors import ForbiddenError, GatherError, NoRemoteError
-from gather.git import current_branch, sync_existing
+from gather import ops
+from gather.errors import GatherError
 from gather.layout import Layout
 from gather.manager import Manager, sync_wikis
-from gather.remote import Remote
 
 _PROJECTS_DIR = os.environ.get("XDG_PROJECTS_DIR", "~/Projects")
 
@@ -73,54 +71,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _is_url(value: str) -> bool:
-    return value.startswith(("git@", "https://", "http://"))
-
-
-def _scope(url: str | None) -> tuple[str, ...]:
-    """Resolve a ``-u`` value to a scope for bulk operations."""
-    if url is None:
-        return ()
-    if _is_url(url):
-        raise GatherError(f"expected a path prefix, not a url: {url!r}")
-    return parse_scope(url)
-
-
-def resolve_remote(root: Path, url: str, *, allow_missing: bool = False) -> Remote:
-    """Resolve a full url to a :class:`Remote`, or a ``host/owner/repo`` path to
-    the remote of an already-setup checkout.
-
-    With ``allow_missing``, a path with no local checkout resolves to an https
-    remote so ``--setup`` can clone it."""
-    if _is_url(url):
-        return Remote.parse(url)
-    parts = parse_scope(url)
-    if len(parts) != 3:
-        raise GatherError(f"expected <host>/<owner>/<repo>, got {url!r}")
-    path = root.joinpath(*parts)
-    if (path / ".git").exists():
-        return Remote.from_path(path)
-    if allow_missing:
-        return Remote.parse(url)
-    raise GatherError(f"repository {path} does not exist; run --setup first")
-
-
-def _cmd_list(layout: Layout, url: str | None) -> None:
-    for path in discover(layout, _scope(url)):
-        if path.name.endswith(".wiki"):
-            continue
-        print(f"{path.relative_to(layout.root)}  {current_branch(path)}")
-
-
-def _cmd_sync(layout: Layout, url: str | None) -> None:
-    for path in discover(layout, _scope(url)):
-        print(f"syncing {path.relative_to(layout.root)}")
-        try:
-            sync_existing(path)
-        except (NoRemoteError, ForbiddenError):
-            print("no remote or forbidden")
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -129,21 +79,25 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         if args.list:
-            _cmd_list(layout, args.url)
+            for entry in ops.list_repos(layout, args.url):
+                print(f"{entry['path']}  {entry['branch']}")
             return 0
         if args.sync:
-            _cmd_sync(layout, args.url)
+            for entry in ops.sync(layout, args.url):
+                print(f"syncing {entry['path']}")
+                if entry["status"] != "ok":
+                    print(entry["status"])
             return 0
 
         if args.url is None:
             parser.error("--url is required (or use --list / --sync)")
 
         if args.setup:
-            remote = resolve_remote(root, args.url, allow_missing=True)
+            remote = ops.resolve_remote(root, args.url, allow_missing=True)
             print(f"reference repository is at {Manager(layout, remote).setup()}")
             return 0
 
-        remote = resolve_remote(root, args.url)
+        remote = ops.resolve_remote(root, args.url)
         manager = Manager(layout, remote)
 
         if args.wiki is not None:
