@@ -57,10 +57,10 @@ def build_server() -> Any:
 
     @mcp.tool()
     @guard
-    def setup(url: str) -> str:
+    def setup(url: str, force: bool = False) -> str:
         """Clone or update the reference repository; returns its path."""
         remote = ops.resolve_remote(root, url, allow_missing=True)
-        return str(Manager(layout, remote).setup())
+        return str(Manager(layout, remote).setup(force=force))
 
     @mcp.tool()
     @guard
@@ -84,9 +84,9 @@ def build_server() -> Any:
 
     @mcp.tool()
     @guard
-    def sync(scope: str | None = None) -> list[dict[str, str]]:
+    def sync(scope: str | None = None, force: bool = False) -> list[dict[str, str]]:
         """Fetch and fast-forward every repository under the scope."""
-        return ops.sync(layout, scope)
+        return ops.sync(layout, scope, force=force)
 
     @mcp.tool()
     @guard

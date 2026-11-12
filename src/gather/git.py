@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from gather.errors import ForbiddenError, NoRemoteError
+from gather.errors import DirtyReferenceError, ForbiddenError, NoRemoteError
 from gather.process import Process, ProcessError
 from gather.remote import Remote
 
@@ -76,6 +76,53 @@ def current_branch(path: Path) -> str:
     return Process(
         "git", "-C", str(path), "rev-parse", "--abbrev-ref", "HEAD"
     ).run().out
+
+
+def default_branch(path: Path) -> str:
+    """Return the remote default branch name (e.g. ``main``), or ``""`` if unknown.
+
+    The default branch is whatever ``origin/HEAD`` points at — the branch the
+    reference clone started on when it was cloned. An empty string means it
+    could not be resolved (no ``origin`` remote, say), in which case callers
+    should skip the branch check rather than guess.
+    """
+    ref = Process(
+        "git", "-C", str(path), "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"
+    ).run().out
+    return ref.removeprefix("refs/remotes/origin/")
+
+
+def ensure_clean(path: Path, *, force: bool = False) -> None:
+    """Enforce the reference-clone invariant: clean and on the default branch.
+
+    A clone off its default branch is checked out back to it — safe, since
+    branch refs and commits are preserved and only the checked-out HEAD moves.
+    A dirty working tree is refused (:class:`DirtyReferenceError`) because
+    discarding it would destroy uncommitted work, unless ``force`` opts into
+    the discard (``reset --hard`` + ``clean -fd``).
+    """
+    current = current_branch(path)
+    default = default_branch(path)
+    status = Process("git", "-C", str(path), "status", "--short").run().out
+    if status and not force:
+        hint = (
+            current
+            if current and current != "HEAD" and current != default
+            else "<branch>"
+        )
+        raise DirtyReferenceError(
+            f"{path} is dirty (uncommitted changes): the reference clone must "
+            f"stay clean.\n"
+            f"do all work in a worktree, not the reference clone:\n"
+            f"  gather worktree -c {hint}\n"
+            f"git status --short:\n{status}\n"
+            "re-run with --force to discard these changes"
+        )
+    if force and status:
+        Process("git", "-C", str(path), "reset", "--hard").checked()
+        Process("git", "-C", str(path), "clean", "-fd").checked()
+    if current and default and current != default:
+        Process("git", "-C", str(path), "checkout", default).checked()
 
 
 class Git:

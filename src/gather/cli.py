@@ -66,6 +66,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="fetch and fast-forward every repository (and wiki) under the scope",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "during --setup/--sync, discard uncommitted changes in a dirty "
+            "reference clone instead of refusing"
+        ),
+    )
 
     sub = parser.add_subparsers(dest="command")
     worktree = sub.add_parser("worktree", help="manage worktrees")
@@ -86,7 +94,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"{entry['path']}  {entry['branch']}")
             return 0
         if args.sync:
-            for entry in ops.sync(layout, args.url):
+            for entry in ops.sync(layout, args.url, force=args.force):
                 print(f"syncing {entry['path']}")
                 if entry["status"] != "ok":
                     print(entry["status"])
@@ -97,7 +105,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.setup:
             remote = ops.resolve_remote(root, args.url, allow_missing=True)
-            print(f"reference repository is at {Manager(layout, remote).setup()}")
+            print(f"reference repository is at {Manager(layout, remote).setup(force=args.force)}")
             return 0
 
         remote = ops.resolve_remote(root, args.url)
