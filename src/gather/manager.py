@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import socket
 from collections.abc import Sequence
 from pathlib import Path
@@ -12,6 +13,13 @@ from gather.layout import Layout
 from gather.process import Process
 from gather.remote import Remote
 from gather.wiki import merge_wikis
+
+#: The instance-wide wiki merged into every ALL.md by default. Override with
+#: the GATHER_INSTANCE_WIKI env var; set it to an empty string to disable the
+#: default merge.
+INSTANCE_WIKI = os.environ.get(
+    "GATHER_INSTANCE_WIKI", "git@gitea.x.home.arpa:kb/gitea.git"
+)
 
 
 class Manager:
@@ -69,15 +77,19 @@ class Manager:
 
 
 def sync_wikis(layout: Layout, main: Remote, extras: Sequence[str]) -> Path:
-    """Sync the project wiki and every extra wiki, then merge them into ALL.md.
+    """Sync the project wiki, the instance wiki, and every extra wiki, then
+    merge them into ALL.md.
 
-    ``extras`` holds additional repo URLs whose *wikis* should be merged (e.g.
-    the instance wiki ``kb/gitea``). The merged view is written to a derived
-    cache location, never inside a wiki repo.
+    The instance wiki (:data:`INSTANCE_WIKI`, by default the shared
+    ``kb/gitea`` wiki) is always merged unless ``GATHER_INSTANCE_WIKI`` is set
+    to an empty string. ``extras`` holds additional repo URLs whose *wikis*
+    should be merged. The merged view is written to a derived cache location,
+    never inside a wiki repo.
     """
+    urls = [url for url in (INSTANCE_WIKI, *extras) if url]
     remotes: list[Remote] = []
     seen: set[str] = set()
-    for remote in [main, *(Remote.parse(url) for url in extras)]:
+    for remote in [main, *(Remote.parse(url) for url in urls)]:
         if remote.origin not in seen:
             seen.add(remote.origin)
             remotes.append(remote)

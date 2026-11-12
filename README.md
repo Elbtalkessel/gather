@@ -53,9 +53,10 @@ lives at `gitea.x.home.arpa/python/gather`.
   accepts either: an existing checkout is updated, a missing one is cloned via
   https.
 - `-s, --setup` — clone or update the reference repository.
-- `-w, --wiki [extra-url ...]` — sync the project wiki (plus any extra wikis,
-  e.g. the instance wiki) and merge every page into one `ALL.md` for
-  drift-finding. Each page is prefixed with `----` and a `source:` line.
+- `-w, --wiki [extra-url ...]` — sync the project wiki, the instance wiki
+  (default `kb/gitea`, override with `GATHER_INSTANCE_WIKI`), and any extra
+  wikis, then merge every page into one `ALL.md` for drift-finding. Each page
+  is prefixed with `----` and a `source:` line.
 - `-i, --info` — print the resolved paths and remotes.
 - `worktree -c <branch>` — create a worktree (and run `devenv` if the repo has a
   `devenv.nix`).
