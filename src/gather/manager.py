@@ -6,7 +6,6 @@ import socket
 from collections.abc import Sequence
 from pathlib import Path
 
-from gather.devenv import Devenv
 from gather.git import Git
 from gather.layout import Layout
 from gather.process import Process
@@ -43,9 +42,7 @@ class Manager:
         return self.wiki_path
 
     def worktree_add(self, branch: str) -> Path:
-        path = self.git.worktree_add(self.repo_path, self.worktree_root, branch)
-        Devenv(path).setup()
-        return path
+        return self.git.worktree_add(self.repo_path, self.worktree_root, branch)
 
     def worktree_remove(self, branch: str) -> None:
         self.git.worktree_remove(self.repo_path, self.worktree_root, branch)
