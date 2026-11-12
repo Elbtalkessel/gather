@@ -8,7 +8,7 @@ import pytest
 
 from gather import manager as manager_module
 from gather.layout import Layout
-from gather.manager import sync_wikis
+from gather.manager import Manager, sync_wikis
 from gather.remote import Remote
 
 MAIN = Remote.parse("git@gitea.x.home.arpa:python/gather.git")
@@ -69,3 +69,63 @@ def test_sync_wikis_empty_instance_wiki_disables_default(
     sync_wikis(Layout(tmp_path), MAIN, [])
 
     assert [remote.origin for remote, _ in merged_wikis] == [MAIN_WIKI]
+
+
+class FakeGit:
+    def __init__(self, remote: Remote) -> None:
+        self.remote = remote
+
+    def sync(self, path: Path) -> None:
+        pass
+
+
+def test_setup_ensures_clean_when_repo_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "gitea.x.home.arpa" / "python" / "gather"
+    (repo / ".git").mkdir(parents=True)
+
+    calls: list[tuple[str, Path, bool]] = []
+
+    def fake_ensure_clean(path: Path, *, force: bool = False) -> None:
+        calls.append(("ensure_clean", path, force))
+
+    monkeypatch.setattr(manager_module, "ensure_clean", fake_ensure_clean)
+    monkeypatch.setattr(manager_module, "Git", FakeGit)
+
+    result = Manager(Layout(tmp_path), MAIN).setup()
+
+    assert result == repo
+    assert calls == [("ensure_clean", repo, False)]
+
+
+def test_setup_forwards_force(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = tmp_path / "gitea.x.home.arpa" / "python" / "gather"
+    (repo / ".git").mkdir(parents=True)
+
+    calls: list[tuple[str, Path, bool]] = []
+
+    def fake_ensure_clean(path: Path, *, force: bool = False) -> None:
+        calls.append(("ensure_clean", path, force))
+
+    monkeypatch.setattr(manager_module, "ensure_clean", fake_ensure_clean)
+    monkeypatch.setattr(manager_module, "Git", FakeGit)
+
+    Manager(Layout(tmp_path), MAIN).setup(force=True)
+
+    assert calls == [("ensure_clean", repo, True)]
+
+
+def test_setup_skips_ensure_clean_when_repo_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        manager_module, "ensure_clean", lambda path, force=False: calls.append("clean")
+    )
+    monkeypatch.setattr(manager_module, "Git", FakeGit)
+
+    Manager(Layout(tmp_path), MAIN).setup()
+
+    assert calls == []

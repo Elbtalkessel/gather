@@ -58,8 +58,8 @@ def test_setup_delegates_to_manager_setup(
         def __init__(self, layout: Any, remote: Remote) -> None:
             self.remote = remote
 
-        def setup(self) -> Path:
-            calls.append(("setup", self.remote))
+        def setup(self, force: bool = False) -> Path:
+            calls.append(("setup", self.remote, force))
             return Path("/projects/repo")
 
     monkeypatch.setattr(mcp_module, "Manager", FakeManager)
@@ -69,7 +69,7 @@ def test_setup_delegates_to_manager_setup(
     assert result == "/projects/repo"
     assert calls == [
         ("resolve_remote", "gitea.x.home.arpa/python/gather", True),
-        ("setup", REMOTE),
+        ("setup", REMOTE, False),
     ]
 
 
@@ -139,8 +139,10 @@ def test_list_repos_delegates_to_ops(server: Any, monkeypatch: pytest.MonkeyPatc
 def test_sync_delegates_to_ops(server: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[Any] = []
 
-    def fake_sync(layout: Any, scope: str | None) -> list[dict[str, str]]:
-        calls.append(("sync", scope))
+    def fake_sync(
+        layout: Any, scope: str | None, *, force: bool = False
+    ) -> list[dict[str, str]]:
+        calls.append(("sync", scope, force))
         return [{"path": "a/b", "status": "ok"}]
 
     monkeypatch.setattr(mcp_module.ops, "sync", fake_sync)
@@ -148,7 +150,7 @@ def test_sync_delegates_to_ops(server: Any, monkeypatch: pytest.MonkeyPatch) -> 
     result = _fn(server, "sync")("gitea.x.home.arpa")
 
     assert result == [{"path": "a/b", "status": "ok"}]
-    assert calls == [("sync", "gitea.x.home.arpa")]
+    assert calls == [("sync", "gitea.x.home.arpa", False)]
 
 
 def test_worktree_create_delegates_to_manager(

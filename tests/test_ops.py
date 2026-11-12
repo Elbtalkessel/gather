@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 
 from gather import ops
-from gather.errors import ForbiddenError, GatherError, NoRemoteError
+from gather.errors import (
+    DirtyReferenceError,
+    ForbiddenError,
+    GatherError,
+    NoRemoteError,
+)
 from gather.layout import Layout
 
 
@@ -48,6 +53,7 @@ def _repo(root: Path, name: str = "repo") -> Path:
 
 def _stub_sync(monkeypatch: pytest.MonkeyPatch, exc: Exception) -> None:
     monkeypatch.setattr(ops, "discover", lambda layout, scope=(): [_repo(layout.root)])
+    monkeypatch.setattr(ops, "ensure_clean", lambda path, force=False: None)
 
     def boom(path: Path) -> None:
         raise exc
@@ -73,8 +79,24 @@ def test_sync_reports_forbidden(
     ]
 
 
+def test_sync_reports_dirty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ops, "discover", lambda layout, scope=(): [_repo(layout.root)])
+
+    def dirty(path: Path, force: bool = False) -> None:
+        raise DirtyReferenceError("dirty")
+
+    monkeypatch.setattr(ops, "ensure_clean", dirty)
+    monkeypatch.setattr(ops, "sync_existing", lambda path: None)
+    assert ops.sync(Layout(tmp_path)) == [
+        {"path": "gitea.x.home.arpa/python/repo", "status": "dirty"}
+    ]
+
+
 def test_sync_reports_ok(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ops, "discover", lambda layout, scope=(): [_repo(layout.root)])
+    monkeypatch.setattr(ops, "ensure_clean", lambda path, force=False: None)
     monkeypatch.setattr(ops, "sync_existing", lambda path: None)
     assert ops.sync(Layout(tmp_path)) == [
         {"path": "gitea.x.home.arpa/python/repo", "status": "ok"}

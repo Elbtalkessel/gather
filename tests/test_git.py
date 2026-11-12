@@ -8,8 +8,14 @@ from typing import ClassVar
 import pytest
 
 from gather import git as git_module
-from gather.errors import ForbiddenError, NoRemoteError
-from gather.git import Git, current_branch, sync_existing
+from gather.errors import DirtyReferenceError, ForbiddenError, NoRemoteError
+from gather.git import (
+    Git,
+    current_branch,
+    default_branch,
+    ensure_clean,
+    sync_existing,
+)
 from gather.process import ProcessError, Result
 from gather.remote import Remote
 
@@ -274,3 +280,89 @@ def test_worktree_add_leaves_existing_worktree_when_remote_missing(
         ("git", "-C", str(repo), "fetch", "origin"),
         ("git", "-C", str(repo), "rev-parse", "--verify", "origin/feature/x"),
     ]
+
+
+def test_default_branch_reads_origin_head(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "gather"
+    ScriptedProcess.script = [(0, "refs/remotes/origin/master", "")]
+    assert default_branch(repo) == "master"
+
+
+def test_default_branch_empty_when_origin_head_missing(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "gather"
+    ScriptedProcess.script = [(128, "", "")]
+    assert default_branch(repo) == ""
+
+
+def test_ensure_clean_checks_out_default_when_off_default(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "gather"
+    ScriptedProcess.script = [
+        (0, "feature/x", ""),  # rev-parse --abbrev-ref HEAD
+        (0, "refs/remotes/origin/main", ""),  # symbolic-ref origin/HEAD
+        (0, "", ""),  # status --short (clean)
+        (0, "", ""),  # checkout main
+    ]
+
+    ensure_clean(repo)
+
+    assert ("git", "-C", str(repo), "checkout", "main") in _worktree_commands()
+
+
+def test_ensure_clean_on_default_and_clean_does_nothing(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "gather"
+    ScriptedProcess.script = [
+        (0, "main", ""),  # rev-parse --abbrev-ref HEAD
+        (0, "refs/remotes/origin/main", ""),  # symbolic-ref origin/HEAD
+        (0, "", ""),  # status --short (clean)
+    ]
+
+    ensure_clean(repo)
+
+    assert not any("checkout" in args for args in _worktree_commands())
+
+
+def test_ensure_clean_refuses_dirty(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "gather"
+    ScriptedProcess.script = [
+        (0, "feature/x", ""),  # rev-parse --abbrev-ref HEAD
+        (0, "refs/remotes/origin/main", ""),  # symbolic-ref origin/HEAD
+        (0, " M README.md", ""),  # status --short (dirty)
+    ]
+
+    with pytest.raises(DirtyReferenceError) as excinfo:
+        ensure_clean(repo)
+
+    assert "gather worktree -c feature/x" in str(excinfo.value)
+    assert " M README.md" in str(excinfo.value)
+    assert "--force" in str(excinfo.value)
+
+
+def test_ensure_clean_force_discards_dirty(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "gather"
+    ScriptedProcess.script = [
+        (0, "feature/x", ""),  # rev-parse --abbrev-ref HEAD
+        (0, "refs/remotes/origin/main", ""),  # symbolic-ref origin/HEAD
+        (0, " M README.md", ""),  # status --short (dirty)
+        (0, "", ""),  # reset --hard
+        (0, "", ""),  # clean -fd
+        (0, "", ""),  # checkout main
+    ]
+
+    ensure_clean(repo, force=True)
+
+    commands = _worktree_commands()
+    assert ("git", "-C", str(repo), "reset", "--hard") in commands
+    assert ("git", "-C", str(repo), "clean", "-fd") in commands
+    assert ("git", "-C", str(repo), "checkout", "main") in commands

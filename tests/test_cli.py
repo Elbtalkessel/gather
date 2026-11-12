@@ -19,6 +19,7 @@ def _repo(root: Path, name: str = "repo") -> Path:
 
 def _stub_sync(monkeypatch: pytest.MonkeyPatch, exc: Exception) -> None:
     monkeypatch.setattr(ops, "discover", lambda layout, scope=(): [_repo(layout.root)])
+    monkeypatch.setattr(ops, "ensure_clean", lambda path, force=False: None)
 
     def boom(path: Path) -> None:
         raise exc

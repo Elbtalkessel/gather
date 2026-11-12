@@ -7,7 +7,7 @@ import socket
 from collections.abc import Sequence
 from pathlib import Path
 
-from gather.git import Git
+from gather.git import Git, ensure_clean
 from gather.layout import Layout
 from gather.process import Process
 from gather.remote import Remote
@@ -41,7 +41,9 @@ class Manager:
     def worktree_root(self) -> Path:
         return self.layout.worktrees(self.remote)
 
-    def setup(self) -> Path:
+    def setup(self, force: bool = False) -> Path:
+        if (self.repo_path / ".git").exists():
+            ensure_clean(self.repo_path, force=force)
         self.git.sync(self.repo_path)
         return self.repo_path
 

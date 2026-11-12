@@ -5,8 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from gather.discover import discover, parse_scope
-from gather.errors import ForbiddenError, GatherError, NoRemoteError
-from gather.git import current_branch, sync_existing
+from gather.errors import (
+    DirtyReferenceError,
+    ForbiddenError,
+    GatherError,
+    NoRemoteError,
+)
+from gather.git import current_branch, ensure_clean, sync_existing
 from gather.layout import Layout
 from gather.remote import Remote
 
@@ -59,17 +64,23 @@ def list_repos(layout: Layout, url: str | None = None) -> list[dict[str, str]]:
     return result
 
 
-def sync(layout: Layout, url: str | None = None) -> list[dict[str, str]]:
+def sync(layout: Layout, url: str | None = None, *, force: bool = False) -> list[dict[str, str]]:
     """Fetch and fast-forward every repo under the scope.
 
-    A repo with no ``origin`` or whose remote rejects access is reported in its
-    status field (``"no remote or forbidden"``) rather than raised.
+    A repo is first healed onto its default branch and refused if dirty (unless
+    ``force`` discards), so a stray off-default or dirty reference clone fails
+    loudly instead of half-fast-forwarding. A repo with no ``origin`` or whose
+    remote rejects access is reported in its status field
+    (``"no remote or forbidden"``) rather than raised.
     """
     result: list[dict[str, str]] = []
     for path in discover(layout, _scope(url)):
         status = "ok"
         try:
+            ensure_clean(path, force=force)
             sync_existing(path)
+        except DirtyReferenceError:
+            status = "dirty"
         except (NoRemoteError, ForbiddenError):
             status = "no remote or forbidden"
         result.append(

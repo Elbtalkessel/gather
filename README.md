@@ -52,7 +52,14 @@ lives at `gitea.x.home.arpa/python/gather`.
 - `-u, --url <url>` — a full git url or a `host/owner/repo` path. `--setup`
   accepts either: an existing checkout is updated, a missing one is cloned via
   https.
-- `-s, --setup` — clone or update the reference repository.
+- `-s, --setup` — clone or update the reference repository. An existing clone
+  is first healed back onto its default branch; a dirty clone (uncommitted
+  changes) is refused with `git status` and a worktree hint unless `--force`
+  discards the changes.
+- `--sync` — fetch and fast-forward every repository (and wiki) under the
+  scope, enforcing the same clean-and-on-default invariant.
+- `--force` — with `--setup`/`--sync`, discard uncommitted changes in a dirty
+  reference clone instead of refusing.
 - `-w, --wiki [extra-url ...]` — sync the project wiki, the instance wiki
   (default `kb/gitea`, override with `GATHER_INSTANCE_WIKI`), and any extra
   wikis, then merge every page into one `ALL.md` for drift-finding. Each page

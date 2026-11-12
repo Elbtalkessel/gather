@@ -13,3 +13,7 @@ class NoRemoteError(GatherError):
 
 class ForbiddenError(GatherError):
     """The checkout's remote rejected the fetch (missing or invalid access)."""
+
+
+class DirtyReferenceError(GatherError):
+    """A reference clone has uncommitted changes and refused to discard them."""
