@@ -65,7 +65,7 @@ def build_server() -> Any:
     @mcp.tool()
     @guard
     def sync_wiki(url: str, extra_urls: list[str] | None = None) -> str:
-        """Sync the project wiki (plus extra wikis) into ALL.md; returns its path."""
+        """Sync the project wiki, instance wiki, and extra wikis into ALL.md; returns its path."""
         remote = ops.resolve_remote(root, url)
         return str(sync_wikis(layout, remote, extra_urls or []))
 

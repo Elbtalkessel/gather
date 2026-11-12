@@ -44,7 +44,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--wiki",
         nargs="*",
         metavar="EXTRA_URL",
-        help="sync the project wiki (plus any extra wikis) and merge into ALL.md",
+        help=(
+            "sync the project wiki, the instance wiki, and any extra wikis "
+            "into ALL.md"
+        ),
     )
     parser.add_argument(
         "-i",
