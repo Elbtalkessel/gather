@@ -76,25 +76,6 @@ def test_current_branch(tmp_path: Path) -> None:
     assert commands()[-1][:4] == ("git", "-C", str(repo), "rev-parse")
 
 
-def test_worktree_add_path(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    root = tmp_path / "worktrees"
-    path = Git(REMOTE).worktree_add(repo, root, "feature/x")
-    assert path == root / "feature/x"
-    assert ("git", "-C", str(repo), "worktree", "add", str(path), "-b", "feature/x") in commands()
-
-
-def test_worktree_add_is_idempotent_when_exists(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    root = tmp_path / "worktrees"
-    branch = "feature/x"
-    path = root / branch
-    path.mkdir(parents=True)
-    result = Git(REMOTE).worktree_add(repo, root, branch)
-    assert result == path
-    assert commands() == []
-
-
 class ScriptedProcess:
     """A ``Process`` stand-in whose responses are queued by the test."""
 
@@ -197,3 +178,99 @@ def test_sync_existing_adopts_remote_branch_for_empty_checkout(
         "origin/master",
     ) in called
     assert not any("merge" in args for args in called)
+
+
+def _worktree_commands() -> list[tuple[str, ...]]:
+    return [call.args for call in ScriptedProcess.calls]
+
+
+def test_worktree_add_tracks_remote_branch_when_present(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "repo"
+    root = tmp_path / "worktrees"
+    branch = "feature/x"
+    path = root / branch
+    ScriptedProcess.script = [
+        (0, "", ""),  # fetch origin
+        (0, "abc123", ""),  # rev-parse --verify origin/feature/x
+        (0, "", ""),  # worktree add path feature/x
+    ]
+
+    result = Git(REMOTE).worktree_add(repo, root, branch)
+
+    assert result == path
+    assert _worktree_commands() == [
+        ("git", "-C", str(repo), "fetch", "origin"),
+        ("git", "-C", str(repo), "rev-parse", "--verify", "origin/feature/x"),
+        ("git", "-C", str(repo), "worktree", "add", str(path), "feature/x"),
+    ]
+
+
+def test_worktree_add_creates_branch_when_remote_missing(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "repo"
+    root = tmp_path / "worktrees"
+    branch = "feature/x"
+    path = root / branch
+    ScriptedProcess.script = [
+        (0, "", ""),  # fetch origin
+        (128, "", "fatal: Needed a single revision"),  # rev-parse --verify origin/feature/x
+        (0, "", ""),  # worktree add path -b feature/x
+    ]
+
+    result = Git(REMOTE).worktree_add(repo, root, branch)
+
+    assert result == path
+    assert _worktree_commands() == [
+        ("git", "-C", str(repo), "fetch", "origin"),
+        ("git", "-C", str(repo), "rev-parse", "--verify", "origin/feature/x"),
+        ("git", "-C", str(repo), "worktree", "add", str(path), "-b", "feature/x"),
+    ]
+
+
+def test_worktree_add_syncs_existing_worktree(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "repo"
+    root = tmp_path / "worktrees"
+    branch = "feature/x"
+    path = root / branch
+    path.mkdir(parents=True)
+    ScriptedProcess.script = [
+        (0, "", ""),  # fetch origin
+        (0, "abc123", ""),  # rev-parse --verify origin/feature/x
+        (0, "", ""),  # reset --hard origin/feature/x
+    ]
+
+    result = Git(REMOTE).worktree_add(repo, root, branch)
+
+    assert result == path
+    assert _worktree_commands() == [
+        ("git", "-C", str(repo), "fetch", "origin"),
+        ("git", "-C", str(repo), "rev-parse", "--verify", "origin/feature/x"),
+        ("git", "-C", str(path), "reset", "--hard", "origin/feature/x"),
+    ]
+
+
+def test_worktree_add_leaves_existing_worktree_when_remote_missing(
+    tmp_path: Path, stub_scripted: None
+) -> None:
+    repo = tmp_path / "repo"
+    root = tmp_path / "worktrees"
+    branch = "feature/x"
+    path = root / branch
+    path.mkdir(parents=True)
+    ScriptedProcess.script = [
+        (0, "", ""),  # fetch origin
+        (128, "", "fatal: Needed a single revision"),  # rev-parse --verify origin/feature/x
+    ]
+
+    result = Git(REMOTE).worktree_add(repo, root, branch)
+
+    assert result == path
+    assert _worktree_commands() == [
+        ("git", "-C", str(repo), "fetch", "origin"),
+        ("git", "-C", str(repo), "rev-parse", "--verify", "origin/feature/x"),
+    ]

@@ -57,8 +57,9 @@ lives at `gitea.x.home.arpa/python/gather`.
   e.g. the instance wiki) and merge every page into one `ALL.md` for
   drift-finding. Each page is prefixed with `----` and a `source:` line.
 - `-i, --info` — print the resolved paths and remotes.
-- `worktree -c <branch>` — create a worktree (and run `devenv` if the repo has a
-  `devenv.nix`).
+- `worktree -c <branch>` — create a worktree. It fetches first, tracks
+  `origin/<branch>` when that remote branch exists (a PR branch, say), and syncs
+  an existing worktree to the remote head instead of returning it stale.
 - `worktree -r <branch>` — remove a worktree.
 
 ## Development

@@ -97,11 +97,33 @@ class Git:
 
     def worktree_add(self, repo: Path, root: Path, branch: str) -> Path:
         path = root / branch
+        # Fetch so ``origin/<branch>`` reflects the remote head before a
+        # worktree is added or an existing one is synced against it.
+        Process("git", "-C", str(repo), "fetch", "origin").checked()
+        remote_ref = f"origin/{branch}"
+        has_remote = Process(
+            "git", "-C", str(repo), "rev-parse", "--verify", remote_ref
+        ).run().ok
+
         if path.exists():
+            # An existing worktree is synced to the remote head instead of
+            # being returned stale.
+            if has_remote:
+                Process(
+                    "git", "-C", str(path), "reset", "--hard", remote_ref
+                ).checked()
             return path
-        Process(
-            "git", "-C", str(repo), "worktree", "add", str(path), "-b", branch
-        ).checked()
+
+        if has_remote:
+            # Track the existing remote branch (e.g. a PR branch) rather than
+            # branching from the reference clone's HEAD.
+            Process(
+                "git", "-C", str(repo), "worktree", "add", str(path), branch
+            ).checked()
+        else:
+            Process(
+                "git", "-C", str(repo), "worktree", "add", str(path), "-b", branch
+            ).checked()
         return path
 
     def worktree_remove(self, repo: Path, root: Path, branch: str) -> None:
